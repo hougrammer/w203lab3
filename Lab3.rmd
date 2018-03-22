@@ -1,0 +1,83 @@
+---
+title: "Lab 3"
+author: "David Hou"
+date: "March 20, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(stargazer)
+```
+
+First we clean the data, using the dplyr package for its nice verbs.  We remove NAs, change prbconv to numeric, and change all integer columns to factors.
+```{r data_cleaning}
+raw = as_tibble(read.csv('crime_v2.csv'))
+t = raw %>% 
+    filter(!is.na(county)) %>%
+    mutate(prbconv = as.numeric(prbconv) / 100) %>%
+    mutate_if(is.integer, as.factor)
+levels(t$west) = c('East', 'West')
+t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
+levels(t$central) = c('Outer', 'Central')
+levels(t$urban) = c('Non-urban', 'Urban')
+```
+
+As a data transformation, we sum up all of the wage types to make a single total wage.
+```{r data_transformations}
+t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
+```
+
+Variables of interest to a politician:
+
+1. Crime rate
+2. Tax revenue per capita
+3. Wages
+
+Here is some single variate EDA.
+```{r single_variate_EDA}
+qplot(t$crmrte, geom = 'histogram', col = I('white'), main = 'Crime Rate', xlab = 'Crime Rate')
+qplot(t$taxpc, geom = 'histogram', col = I('white'), main = 'Tax Revenue Per Capita', xlab = 'Tax Revenue Per Capita')
+qplot(t$wage, geom = 'histogram', col = I('white'), main = 'Wages', xlab = 'Wages')
+```
+
+
+Here are some facet plots.
+```{r facet_plots}
+ggplot(t, aes(crmrte)) + 
+    geom_histogram() + 
+    facet_grid(west ~ central) + 
+    theme(panel.spacing = unit(1, "lines")) +
+    labs(title = 'Crime Rate by Region', x = 'Crime Rate')
+ggplot(t, aes(crmrte)) + 
+    geom_histogram() + 
+    facet_grid(. ~ urban) + 
+    theme(panel.spacing = unit(2, "lines")) +
+    labs(title = 'Non-urban vs Urban Crime Rate', x = 'Crime Rate')
+```
+
+Here is some bivariate EDA.
+```{r bivariate_EDA}
+ggplot(t, aes(crmrte, prbarr)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Arrest Probability', x = 'Crime Rate')
+ggplot(t, aes(crmrte, prbconv)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Conviction Probability', x = 'Crime Rate')
+ggplot(t, aes(crmrte, prbpris)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Prison Probability', x = 'Crime Rate')
+ggplot(t, aes(crmrte, avgsen)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Average Prison Sentence', x = 'Crime Rate')
+ggplot(t, aes(crmrte, polpc)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Police Per Capita', x = 'Crime Rate')
+```
