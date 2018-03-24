@@ -1,0 +1,182 @@
+---
+title: "Lab3"
+subtitle: "Determinants of crime"
+author: "David Hou, Scott Hungerford, Irene Seo"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+setwd("~/Desktop/W203.2/Assignments/Lab_3")
+library(dplyr)
+library(ggplot2)
+library(stargazer)
+```
+
+## Introduction
+We are hired to examine the data to help the campaign understand the determinants of crime and to generate policy suggestions that are applicable to local government.
+
+### Cleansing Data
+First we clean the data, using the dplyr package for its nice verbs. We remove NAs, change prbconv to numeric, and change all integer columns to factors.
+
+```{r}
+raw = as_tibble(read.csv('crime_v2.csv'))
+t = raw %>% 
+    filter(!is.na(county)) %>%
+    mutate(prbconv = as.numeric(prbconv) / 100) %>%
+    mutate_if(is.integer, as.factor)
+levels(t$west) = c('East', 'West')
+t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
+levels(t$central) = c('Outer', 'Central')
+levels(t$urban) = c('Non-urban', 'Urban')
+```
+
+As a data transformation, we sum up all of the wage types to make a single total wage.
+
+```{r}
+t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
+str(t)
+```
+
+We have 91 observations from the data set to analyze.
+
+## Univariate Analysis
+
+First we examine variables of interest to a politician with regards to changing policies.
+1. Crime rate
+2. Tax revenue per capita
+3. Wages
+4. Police per capita
+5. Average sentences in days
+
+```{r}
+summary(t$crmrte)
+qplot(t$crmrte, geom = 'histogram', col = I('white'), main = 'Crime Rate', xlab = 'Crime Rate')
+```
+
+Crime rate shows skewed distribution with mean at 3.3%.
+
+```{r}
+summary(t$taxpc)
+qplot(t$taxpc, geom = 'histogram', col = I('white'), main = 'Tax Revenue Per Capita', xlab = 'Tax Revenue Per Capita')
+```
+
+Tax revenue per capita also shows skewed distribution with mean value at 38 thousand dollars. (?)
+
+```{r}
+summary(t$wage)
+qplot(t$wage, geom = 'histogram', col = I('white'), main = 'Wages', xlab = 'Wages')
+```
+
+Wage also shows slightly skewed distribution similar to that of crime rate, with mean value at 2,955 and with some outliers to the right side of distribution.
+
+```{r}
+summary(t$prbarr)
+qplot(t$prbarr, geom = 'histogram', col = I('white'), main = 'Probability of arrest', xlab = 'Probability of arrest')
+```
+
+Probability of arrest has a left skewed distribution around mean at 29%.
+
+
+```{r}
+summary(t$prbconv)
+qplot(t$prbconv, geom = 'histogram', col = I('white'), main = 'Probability of conviction', xlab = 'Probability of conviction')
+```
+
+Probability of conviction has a uniform distribution.
+
+```{r}
+summary(t$prbpris)
+qplot(t$prbpris, geom = 'histogram', col = I('white'), main = 'Probability of prison sentence', xlab = 'Probability of prison sentence')
+```
+
+Probability of prison sentence has a right skewed distribution around mean at 41%.
+
+```{r}
+summary(t$polpc)
+qplot(t$polpc, geom = 'histogram', col = I('white'), main = 'Police per capita', xlab = 'Police per capita')
+```
+
+Police per capita has very skewed distribution with mean at .0017. It also has an extreme outlier to the right.
+
+
+### Crime rates by regions
+
+Next we examine crime rates by regions and by density of population.
+
+```{r}
+ggplot(t, aes(crmrte)) + 
+    geom_histogram() + 
+    facet_grid(west ~ central) + 
+    theme(panel.spacing = unit(1, "lines")) +
+    labs(title = 'Crime Rate by Region', x = 'Crime Rate')
+```
+
+Our data points come more from Eastern N.C. than Western N.C., and more from outer region than central region.
+Except for Western central region, they all show left skewed distributions. Eastern N.C. has crime rate spikes around 2.5%, whereas crime rate peaks at 1% in Western outer region.
+
+```{r}
+ggplot(t, aes(crmrte)) + 
+    geom_histogram() + 
+    facet_grid(. ~ urban) + 
+    theme(panel.spacing = unit(2, "lines")) +
+    labs(title = 'Non-urban vs Urban Crime Rate', x = 'Crime Rate')
+```
+
+We have far more data points of crimes in non-urban area than urban area. (?)
+Crime rates are densely populated around 3% in non-urban area with a left skewed distribution, whereas urban crime rates are dispersed around higher value of 5% to 10%.
+
+## Bivariate Analysis
+
+```{r}
+ggplot(t, aes(crmrte, taxpc)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Tax Revenue per Capita', x = 'Crime Rate')
+lm(crmrte ~ taxpc, data=t)
+```
+
+```{r}
+ggplot(t, aes(crmrte, wage)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Wages', x = 'Crime Rate')
+lm(crmrte ~ wage, data=t)
+```
+
+
+```{r}
+ggplot(t, aes(crmrte, prbarr)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Arrest Probability', x = 'Crime Rate')
+lm(crmrte ~ prbarr, data=t)
+
+ggplot(t, aes(crmrte, prbconv)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Conviction Probability', x = 'Crime Rate')
+lm(crmrte ~ prbconv, data=t)
+
+ggplot(t, aes(crmrte, prbpris)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Prison Probability', x = 'Crime Rate')
+lm(crmrte ~ prbpris, data=t)
+
+ggplot(t, aes(crmrte, avgsen)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Average Prison Sentence', x = 'Crime Rate')
+lm(crmrte ~ avgsen, data=t)
+
+ggplot(t, aes(crmrte, polpc)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Police Per Capita', x = 'Crime Rate')
+lm(crmrte ~ polpc, data=t)
+```
+
+
+
