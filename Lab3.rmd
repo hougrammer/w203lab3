@@ -9,15 +9,22 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE, include = TRUE, warning = FALSE, message = FALSE)
 library(dplyr)
 library(ggplot2)
+library(GGally) # for ggcorr
 library(stargazer)
 ```
 
-First we clean the data, using the dplyr package for its nice verbs.  We remove NAs, change prbconv to numeric, and change all integer columns to factors.
+# Introduction
+
+The purpose of this study is to provide information for political campaign in North Carolina.  Specifically, we want to determine what variables contribute to crime rate and help the campaign propose policy suggestions to local governments.  To accomplish this, we were given crime data from several North Carolina counties along with other variables.  We will run ordinary least square regressions to help determine which of these are the best predictors of crime.
+
+# Data Cleaning
+
+First we need clean the data.  We remove NAs, change prbconv to numeric, and change all integer columns to factors.
 ```{r data_cleaning}
 raw = as_tibble(read.csv('crime_v2.csv'))
 t = raw %>% 
     filter(!is.na(county)) %>%
-    mutate(prbconv = as.numeric(prbconv) / 100) %>%
+    mutate(prbconv = as.numeric(as.character(prbconv))) %>%
     mutate_if(is.integer, as.factor)
 levels(t$west) = c('East', 'West')
 t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
@@ -30,11 +37,21 @@ As a data transformation, we sum up all of the wage types to make a single total
 t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
 ```
 
-Variables of interest to a politician:
+# Determining Key Variables of Interest
 
-1. Crime rate
-2. Tax revenue per capita
-3. Wages
+To determine which variables are of interest to us when predicting crime rate, we look at the correlation matrix among the variables.
+
+```{r correlation_matrix}
+t2 = t %>% select(crmrte, prbarr, prbconv, prbpris, avgsen, polpc, density, taxpc, pctmin80, mix, pctymle, wage)
+ggcorr(t2, label = TRUE, label_round = 2, label_size = 3, size = 3) + ggtitle('Correlation Matrix')
+```
+
+From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = 0.73).  This variable looks like a good candidate as a causal predictor for crime rate.  One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
+
+The other two variables with moderately positive correlation are tax per capita (r = 0.45) and wages (r = 0.38).  It is interesting to note that taxes and wages are not very correlated with themselves (r = 0.23).  This finding is surprising, as one would expect that as wages go up, tax revenue goes up as well.  Also note that population density is weakly correlated with taxes (r = 0.32) and moderately correlated with wages(r = 0.55).  We believe that taxes and wages are not directly causing higher crime rates, but are correlated due to their relationship with population density.
+
+Of the three "certainty of punishment" variables, it looks like arrest and conviction probability (both r = -0.39) have some moderate effect on crime rate but not probability of prison sentence (r = 0.05).  It is important to note that these three probabilities seem uncorrelated with one another, so we can include multiple ones in our regression.  The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = 0.03)
+
 
 Here is some single variate EDA.
 ```{r single_variate_EDA}
@@ -80,4 +97,9 @@ ggplot(t, aes(crmrte, polpc)) +
     geom_point() + 
     geom_smooth(method = 'lm') + 
     labs(title = 'Crime Rate vs Police Per Capita', x = 'Crime Rate')
+```
+
+```{r models}
+m1 = lm(t$crmrte ~ t$density)
+m2 = lm(t$crmrte ~ t$density + t$prbarr)
 ```
