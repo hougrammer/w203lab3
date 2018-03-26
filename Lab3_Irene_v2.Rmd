@@ -1,0 +1,217 @@
+
+---
+title: "Lab3_subset"
+subtitle: "Determinants of crime"
+author: "David Hou, Scott Hungerford, Irene Seo"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+setwd("~/Desktop/W203.2/Assignments/Lab_3")
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(stargazer)
+```
+
+## Introduction
+The purpose of this study is to provide information for political campaign in North Carolina. Specifically, we want to determine what variables contribute to crime rate and help the campaign propose policy suggestions to local governments. To accomplish this, we were given crime data from several North Carolina counties along with other variables. We will run ordinary least square regressions to help determine which of these are the best predictors of crime.
+
+### Data Cleaning
+First we clean the data, using the dplyr package for its nice verbs. We remove NAs, change prbconv to numeric, and change all integer columns to factors.
+
+```{r}
+raw = as_tibble(read.csv('crime_v2.csv'))
+t = raw %>% 
+    filter(!is.na(county)) %>%
+    mutate(prbconv = as.numeric(prbconv) / 100) %>%
+    mutate_if(is.integer, as.factor)
+levels(t$west) = c('East', 'West')
+t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
+levels(t$central) = c('Outer', 'Central')
+levels(t$urban) = c('Non-urban', 'Urban')
+```
+
+As a data transformation, we sum up all of the wage types to make a single total wage.
+
+```{r}
+t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
+str(t)
+```
+
+We have 91 observations from the data set to analyze.
+
+```{r}
+t_sub <- subset(t, prbarr <= 1 & prbconv <= 1)
+```
+
+## Exploratory Data Analysis
+
+To determine which variables are of interest to us when predicting crime rate, we look at the correlation matrix among the variables.
+
+```{r}
+t3 = t_sub %>% select(crmrte, prbarr, prbconv, prbpris, avgsen, polpc, density, taxpc, pctmin80, mix, pctymle, wage)
+ggcorr(t3, label = TRUE, label_round = 2, label_size = 3, size = 3) + ggtitle('Correlation Matrix')
+```
+
+
+From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = 0.73). This variable looks like a good candidate as a causal predictor for crime rate. One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
+
+The other two variables with moderately positive correlation are tax per capita (r = 0.45) and police per capita (r = 0.48). Note that population density is weakly correlated with taxes (r = 0.32) and moderately correlated with wages(r = 0.56). We believe that taxes and wages are not directly causing higher crime rates, but are correlated due to their relationship with population density. Also note that police per capita is correlated with taxes (r = 0.57) as well as density (r = 0.36).
+
+Of the three "certainty of punishment" variables, it looks like arrest and conviction probability (both r = -0.38) have some moderate effect on crime rate but not probability of prison sentence (r = 0.05). It is important to note that these three probabilities seem uncorrelated with one another, so we can include multiple ones in our regression. The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = 0.03)
+
+### Univariate Analyses
+
+```{r}
+summary(t_sub$crmrte)
+qplot(t_sub$crmrte, geom = 'histogram', col = I('white'), main = 'Crime Rate', xlab = 'Crime Rate')
+```
+
+Crime rate shows skewed distribution with mean at 3.3%.
+
+```{r}
+summary(t_sub$taxpc)
+qplot(t_sub$taxpc, geom = 'histogram', col = I('white'), main = 'Tax Revenue Per Capita', xlab = 'Tax Revenue Per Capita')
+```
+
+Tax revenue per capita also shows skewed distribution with mean value at 38 thousand dollars. (?)
+
+```{r}
+summary(t_sub$wage)
+qplot(t_sub$wage, geom = 'histogram', col = I('white'), main = 'Wages', xlab = 'Wages')
+```
+
+Wage also shows slightly skewed distribution similar to that of crime rate, with mean value at 2,955 and with some outliers to the right side of distribution.
+
+```{r}
+summary(t_sub$prbarr)
+qplot(t_sub$prbarr, geom = 'histogram', col = I('white'), main = 'Probability of arrest', xlab = 'Probability of arrest')
+```
+
+Probability of arrest has a left skewed distribution around mean at 29%.
+
+
+```{r}
+summary(t_sub$prbconv)
+qplot(t_sub$prbconv, geom = 'histogram', col = I('white'), main = 'Probability of conviction', xlab = 'Probability of conviction')
+```
+
+Probability of conviction has a uniform distribution.
+
+```{r}
+summary(t_sub$prbpris)
+qplot(t_sub$prbpris, geom = 'histogram', col = I('white'), main = 'Probability of prison sentence', xlab = 'Probability of prison sentence')
+```
+
+Probability of prison sentence has a right skewed distribution around mean at 41%.
+
+```{r}
+summary(t_sub$polpc)
+qplot(t_sub$polpc, geom = 'histogram', col = I('white'), main = 'Police per capita', xlab = 'Police per capita')
+```
+
+Police per capita has very skewed distribution with mean at .0017. It also has an extreme outlier to the right.
+
+### Bivariate Analysis
+
+```{r}
+ggplot(t_sub, aes(crmrte, density)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Population Density', x = 'Crime Rate')
+```
+
+```{r}
+ggplot(t_sub, aes(crmrte, prbarr)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Probability of Arrest', x = 'Crime Rate')
+```
+
+```{r}
+ggplot(t_sub, aes(crmrte, prbconv)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm') + 
+    labs(title = 'Crime Rate vs Probability of Conviction', x = 'Crime Rate')
+```
+
+
+
+## Models
+
+### Simple OLS
+
+```{r}
+model1 = lm(crmrte ~ density, data=t_sub)
+model2 = lm(crmrte ~ prbarr, data=t_sub)
+model3 = lm(crmrte ~ prbconv, data=t_sub)
+stargazer(model1, model2, model3, type = "text")
+```
+
+### Multivariate OLS
+
+```{r}
+model_combined = lm(crmrte ~ density + prbarr + prbconv, data=t_sub)
+stargazer(model_combined, type = "text")
+```
+
+### Omitted Variables
+
+Next we examine if there is any omitted variables bias for our key explanatory variables.
+
+```{r}
+model1_1 = lm(density ~ wage, data=t_sub)
+model1_2 = lm(density ~ taxpc, data=t_sub)
+model1_3 = lm(density ~ polpc, data=t_sub)
+stargazer(model1_1, model1_2, model1_3, type = "text")
+```
+
+```{r}
+model1_4 = lm(crmrte ~ density + wage + taxpc + polpc, data=t_sub)
+stargazer(model1_4, type="text")
+```
+
+```{r}
+model1_5 = lm(crmrte ~ density + taxpc + polpc, data=t_sub)
+stargazer(model1_5, type="text")
+```
+
+
+```{r}
+model2_1 = lm(prbconv ~ mix, data=t_sub)
+stargazer(model2, model2_1, type = "text")
+```
+
+
+```{r}
+model3_1 = lm(prbarr ~ mix, data=t_sub)
+stargazer(model3, model3_1, type = "text")
+```
+
+### Combining
+
+```{r}
+model_combined_1 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv + mix, data=t_sub)
+model_combined_2 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv, data=t_sub)
+model_combined_3 = lm(crmrte ~ density + polpc + prbarr + prbconv, data=t_sub)
+model_combined_4 = lm(crmrte ~ density + polpc + prbarr + prbconv + mix, data=t_sub)
+stargazer(model_combined_1, model_combined_2, model_combined_3, model_combined_4, type="text")
+```
+
+### Adding all the covariates
+
+```{r}
+model_final_1 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv + mix + wage, data=t_sub)
+model_final_2 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv + mix + wage + pctymle, data=t_sub)
+model_final_3 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv + mix + wage + pctymle + pctmin80, data=t_sub)
+model_final_4 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv + mix + wage + pctymle + pctmin80 + avgsen, data=t_sub)
+model_final_5 = lm(crmrte ~ density + taxpc + polpc + prbarr + prbconv + mix + pctymle + pctmin80 + avgsen, data=t_sub)
+stargazer(model_combined_2, model_final_1, model_final_2, model_final_3, model_final_4, model_final_5, type="text")
+```
+
+## Conclusion
+
+
