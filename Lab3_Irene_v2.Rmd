@@ -26,7 +26,7 @@ First we clean the data, using the dplyr package for its nice verbs. We remove N
 raw = as_tibble(read.csv('crime_v2.csv'))
 t = raw %>% 
     filter(!is.na(county)) %>%
-    mutate(prbconv = as.numeric(prbconv) / 100) %>%
+    mutate(prbconv = as.numeric(as.character(prbconv))) %>%
     mutate_if(is.integer, as.factor)
 levels(t$west) = c('East', 'West')
 t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
@@ -57,11 +57,11 @@ ggcorr(t3, label = TRUE, label_round = 2, label_size = 3, size = 3) + ggtitle('C
 ```
 
 
-From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = 0.73). This variable looks like a good candidate as a causal predictor for crime rate. One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
+From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = 0.72). This variable looks like a good candidate as a causal predictor for crime rate. One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
 
-The other two variables with moderately positive correlation are tax per capita (r = 0.45) and police per capita (r = 0.48). Note that population density is weakly correlated with taxes (r = 0.32) and moderately correlated with wages(r = 0.56). We believe that taxes and wages are not directly causing higher crime rates, but are correlated due to their relationship with population density. Also note that police per capita is correlated with taxes (r = 0.57) as well as density (r = 0.36).
+The other two variables with moderately positive correlation are police per capita (r = 0.56), wage (r = 0.5), and tax per capita (r = 0.48). Note that population density is highly correlated with wage (r = 0.67) and weakly correlated with police per capita (r = 0.4) taxes (r = 0.34). We believe that taxes and wages are not directly causing higher crime rates, but are correlated due to their relationship with population density. Also note that police per capita is correlated with taxes (r = 0.6).
 
-Of the three "certainty of punishment" variables, it looks like arrest and conviction probability (both r = -0.38) have some moderate effect on crime rate but not probability of prison sentence (r = 0.05). It is important to note that these three probabilities seem uncorrelated with one another, so we can include multiple ones in our regression. The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = 0.03)
+Of the three "certainty of punishment" variables, it looks like arrest probability (r = -0.51) and conviction probability (r = -0.31) have some effect on crime rate but not probability of prison sentence (r = 0.05). It is important to note that these three probabilities seem uncorrelated with one another, so we can include multiple ones in our regression. The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = 0.03)
 
 ### Univariate Analyses
 
@@ -176,19 +176,23 @@ stargazer(model1_4, type="text")
 
 ```{r}
 model1_5 = lm(crmrte ~ density + taxpc + polpc, data=t_sub)
-stargazer(model1_5, type="text")
+model1_6 = lm(crmrte ~ density + wage + polpc, data=t_sub)
+model1_7 = lm(crmrte ~ density + polpc, data=t_sub)
+stargazer(model1_5, model1_6, model1_7, type="text")
 ```
 
+**Model1_5 is best fit
+leave out wage
 
 ```{r}
 model2_1 = lm(prbconv ~ mix, data=t_sub)
-stargazer(model2, model2_1, type = "text")
+stargazer(model2_1, type = "text")
 ```
 
 
 ```{r}
 model3_1 = lm(prbarr ~ mix, data=t_sub)
-stargazer(model3, model3_1, type = "text")
+stargazer(model3_1, type = "text")
 ```
 
 ### Combining
@@ -200,6 +204,8 @@ model_combined_3 = lm(crmrte ~ density + polpc + prbarr + prbconv, data=t_sub)
 model_combined_4 = lm(crmrte ~ density + polpc + prbarr + prbconv + mix, data=t_sub)
 stargazer(model_combined_1, model_combined_2, model_combined_3, model_combined_4, type="text")
 ```
+
+**model_combined_2 is best fit
 
 ### Adding all the covariates
 
