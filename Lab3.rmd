@@ -43,6 +43,11 @@ We also do not see an advantage to analyzing each wage individually.  Thus, we c
 t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
 ```
 
+Here is a summary of the data.
+```{r summary}
+stargazer(data.frame(t), type = 'text')
+```
+
 # Examining Key Variables of Interest
 
 ```{r crmrte_hist}
@@ -105,12 +110,25 @@ qplot(t$prbconv, t$crmrte) +
 ```{r models}
 m1 = lm(t$crmrte ~ t$density)
 m2 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv)
-m3 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv + t$taxpc)
-m4 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$density + t$taxpc + t$pctmin80 + t$pctymle)
-m5 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$prbpris + t$avgsen + t$density + t$taxpc + t$pctmin80 + t$mix + t$pctymle + t$wage)
+m3 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv + t$taxpc + t$pctmin80 + t$pctymle)
+m4 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$prbpris + t$avgsen + t$density + t$taxpc + t$pctmin80 + t$mix + t$pctymle + t$wage)
 
-stargazer(m1, m2, m3, m4, m5, type = 'text')
+stargazer(m1, m2, m3, m4, type = 'text')
 ```
+
+# Omitted Variables
+
+measured coefficient = true coefficient + omitted variable bias
+alpha1 = beta1 + beta2 delta1
+y = beta0 + beta1x1 + ... + betak xk + u
+omit xk
+xk = delta0 + delta1x1 +... + delta(k-1)x(k-1)
+y = (beta0 + betak delta0) + (beta1 + betak delta1)x1 + ... + (beta(k-1) + betak delta(k-1))x(k-1)
+                                -.059 = beta1 + (-)(-)
+                                beta1 < -.059
+Morality ~ (0)density (-)prbarr (-)prbconv (0)taxpc (0)pctmin80 (-)pctymle 
+Education
+Climate
 
 
 Here is some single variate EDA.
