@@ -1,6 +1,6 @@
 ---
 title: "Lab 3"
-author: "David Hou"
+author: "David Hou, Scott Hungerfield, Irene Seo"
 date: "March 20, 2018"
 output: pdf_document
 ---
@@ -19,38 +19,98 @@ The purpose of this study is to provide information for political campaign in No
 
 # Data Cleaning
 
-First we need clean the data.  We remove NAs, change prbconv to numeric, and change all integer columns to factors.
+First we need to clean the data.  In the raw data, we notice that that the last 6 rows are empty.  The integer columns are probably more useful to us as factors.  The prbconv is coded as a factor, so we turn it into a numeric.
+
+We also notice that prbarr and prbconv have values that are greater than 1, which does not make much sense because they are probability variables.  We assume that these values were coded incorrectly and filter those out.
+
+As a minor change, we divide pctmin80 by 100, so that it matches the formatting of pctymle.  Both variables are percentages and we've arbitrarily chosen to represent them as a number between 0 and 1 rather than 0 to 100.
 ```{r data_cleaning}
 raw = as_tibble(read.csv('crime_v2.csv'))
 t = raw %>% 
     filter(!is.na(county)) %>%
     mutate(prbconv = as.numeric(as.character(prbconv))) %>%
-    mutate_if(is.integer, as.factor)
+    mutate(pctmin80 = pctmin80 / 100) %>%
+    mutate_if(is.integer, as.factor) %>%
+    filter(prbarr < 1 & prbconv < 1)
 levels(t$west) = c('East', 'West')
 t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
 levels(t$central) = c('Outer', 'Central')
 levels(t$urban) = c('Non-urban', 'Urban')
 ```
 
-As a data transformation, we sum up all of the wage types to make a single total wage.
+We also do not see an advantage to analyzing each wage individually.  Thus, we create a new column that is the sum of all the wage columns.
 ```{r data_transformations}
 t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
 ```
 
-# Determining Key Variables of Interest
+# Examining Key Variables of Interest
 
-To determine which variables are of interest to us when predicting crime rate, we look at the correlation matrix among the variables.
+```{r crmrte_hist}
+qplot(t$crmrte, col = I('white')) + 
+    labs(title = 'Crime Rate', x = 'Crimes Committed per Person')
+summary(t$crmrte)
+```
+
+We see that the main variable of interest, crime rate, has some positive skew, but does not seem to have a very exotic distribution.  To determine which variables are of interest to us when predicting crime rate, we look at the correlation matrix among the variables.
 
 ```{r correlation_matrix}
 t2 = t %>% select(crmrte, prbarr, prbconv, prbpris, avgsen, polpc, density, taxpc, pctmin80, mix, pctymle, wage)
 ggcorr(t2, label = TRUE, label_round = 2, label_size = 3, size = 3) + ggtitle('Correlation Matrix')
 ```
 
-From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = 0.73).  This variable looks like a good candidate as a causal predictor for crime rate.  One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
+From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = `r round(cor(t$crmrte, t$density), 2)`).  This variable looks like a good candidate as a causal predictor for crime rate.  One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
 
-The other two variables with moderately positive correlation are tax per capita (r = 0.45) and wages (r = 0.38).  It is interesting to note that taxes and wages are not very correlated with themselves (r = 0.23).  This finding is surprising, as one would expect that as wages go up, tax revenue goes up as well.  Also note that population density is weakly correlated with taxes (r = 0.32) and moderately correlated with wages(r = 0.55).  We believe that taxes and wages are not directly causing higher crime rates, but are correlated due to their relationship with population density.
+```{r crmrte_vs_density}
+qplot(t$density, t$crmrte) +  
+    labs(title = 'Crime Rate vs Population Density', x = 'People per Square Mile', y = 'Crimes Committed per Person') + 
+    geom_smooth(method = 'lm', se = FALSE)
+```
 
-Of the three "certainty of punishment" variables, it looks like arrest and conviction probability (both r = -0.39) have some moderate effect on crime rate but not probability of prison sentence (r = 0.05).  It is important to note that these three probabilities seem uncorrelated with one another, so we can include multiple ones in our regression.  The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = 0.03)
+The other two variables with moderately positive correlation are tax per capita (r = `r round(cor(t$crmrte, t$taxpc), 2)`) and wages (r = `r round(cor(t$crmrte, t$wage), 2)`).  It is interesting to note that taxes and wages are not very correlated with themselves (r = `r round(cor(t$taxpc, t$wage), 2)`).  This finding is surprising, as one would expect that wages and taxes would go up very closely with each other.  Also note that population density is weakly correlated with taxes (r = `r round(cor(t$taxpc, t$density), 2)`) and moderately correlated with wages (r = `r round(cor(t$wage, t$density), 2)`).  We believe that taxes and wages are not directly causing higher crime rates but could be good indirect indicators.
+
+```{r crmrte_vs_taxpc}
+qplot(t$taxpc, t$crmrte) + 
+    labs(title = 'Crime Rate vs Taxes', x = 'Tax Revenue per Capita', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+```{r crmrte_vs_wage}
+qplot(t$wage, t$crmrte) + 
+    labs(title = 'Crime Rate vs Wages', x = 'Weekly Wages', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+Interestingly, the relationship between police per capita and crime rate is positive and moderately large (r = `r round(cor(t$crmrte, t$polpc), 2)`).  This means that either increasing police presence makes crime rate worse or that crime is causing an increase in police presence rather than vice versa.  The latter explanation seems much more logical.
+
+```{r crmrte_vs_polpc}
+qplot(t$polpc, t$crmrte) + 
+    labs(title = 'Crime Rate vs Police Presence', x = 'Police per Capita', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+Of the three "certainty of punishment" variables, it looks like arrest probability has a moderate effect (r = `r round(cor(t$crmrte, t$prbarr), 2)`) and conviction probability has a weak effect (r = `r round(cor(t$crmrte, t$prbconv), 2)`), but probability of prison sentence has almost no effect (r = `r round(cor(t$crmrte, t$prbpris), 2)`).  It is important to note that these three probabilities seem uncorrelated with one another, so we will include multiple ones in our regression without fear of multicolinearity.  The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = `r round(cor(t$crmrte, t$avgsen), 2)`).
+
+```{r crmrte_vs_prbarr}
+qplot(t$prbarr, t$crmrte) + 
+    labs(title = 'Crime Rate vs Arrest Probability', x = 'Arrest Probability', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+```{r crmrte_vs_prbconv}
+qplot(t$prbconv, t$crmrte) + 
+    labs(title = 'Crime Rate vs Conviction Probability', x = 'Conviction Probability', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+# Model Building
+
+```{r models}
+m1 = lm(t$crmrte ~ t$density)
+m2 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv)
+m3 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv + t$taxpc)
+m4 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$density + t$taxpc + t$pctmin80 + t$pctymle)
+m5 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$prbpris + t$avgsen + t$density + t$taxpc + t$pctmin80 + t$mix + t$pctymle + t$wage)
+
+stargazer(m1, m2, m3, m4, m5, type = 'text')
+```
 
 
 Here is some single variate EDA.
@@ -97,9 +157,4 @@ ggplot(t, aes(crmrte, polpc)) +
     geom_point() + 
     geom_smooth(method = 'lm') + 
     labs(title = 'Crime Rate vs Police Per Capita', x = 'Crime Rate')
-```
-
-```{r models}
-m1 = lm(t$crmrte ~ t$density)
-m2 = lm(t$crmrte ~ t$density + t$prbarr)
 ```
