@@ -109,11 +109,11 @@ qplot(t$prbconv, t$crmrte) +
 
 ```{r models}
 m1 = lm(t$crmrte ~ t$density)
-m2 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv)
+m2 = lm(t$crmrte ~ t$density + t$prbconv)
 m3 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv + t$taxpc + t$pctmin80 + t$pctymle)
 m4 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$prbpris + t$avgsen + t$density + t$taxpc + t$pctmin80 + t$mix + t$pctymle + t$wage)
 
-stargazer(m1, m2, m3, m4, type = 'text')
+stargazer(m1, m2, m3, m4, type = 'text', report = 'vc')
 ```
 
 # Omitted Variables
@@ -129,6 +129,9 @@ y = (beta0 + betak delta0) + (beta1 + betak delta1)x1 + ... + (beta(k-1) + betak
 Morality ~ (0)density (-)prbarr (-)prbconv (0)taxpc (0)pctmin80 (-)pctymle 
 Education
 Climate
+
+# Conclusion
+
 
 
 Here is some single variate EDA.
