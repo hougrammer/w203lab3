@@ -233,22 +233,67 @@ The table below shows omitted variables' effect on both the measure variables an
 
 
                                   
-Omitted Variable  Morals   Diet   MH   Happiness  FS   Drugs   prbrc
----------------   -------  -----  ---  ---------  ---  ------  ------
-crmrate           -1        0     -1     -1        -1     1       1  
-prbarr            -1        0     -1     -1        -1     1       1  
-prbconv           -1        0     -1     -1        -1     1       1    
-prbpris           -1        0     -1     -1        -1     1       1         
-avgsen            -1        0     -1     -1        -1     1       1  
-polpc              0        0      0      0         0     1       0 
-density            0       -1      0      0         0     1       0 
-taxpc              0        1      1      1         0     0       0 
-pctmin80           0        0      0      0         0     0       0 
-wage               0        1      1      1         1    -1       1  
-mix                0        0     -1     -1        -1     1       0 
-pctymle            0       -1      0      0         0     1       0 
+Omitted Variable   Morals   Diet   MH   Happiness  FS   Drugs   prbrc
+-----------------  -------  -----  ---  ---------  ---  ------  ------
+crmrate (B1)       -1        0     -1     -1        -1     1       1  
+prbarr             -1        0     -1     -1        -1     1       1  
+prbconv            -1        0     -1     -1        -1     1       1    
+density             0       -1      0      0         0     1       0 
+taxpc               0        1      1      1         0     0       0 
+pctmin80            0        0      0      0         0     0       0 
+pctymle             0       -1      0      0         0     1       0 
 
-To determine the direction each omitted variables drives our outcome variable, we will only consider the omitted variable's impact on outcome variable and density, because it was the highest correlated to the outcome variable. The only two omitted variables that had an impact on density were Diet and Drugs. Diet had a negative impact on density, however it had no direct impact on crime rate, thus there is no bias introduced with the diet omitted variable. The Drugs variable had a positive impact both on crime rate and density. Therefore, density's impact has on crime rate is underestimated.   
+
+The equation for model_2 is:
+$$ crmrate = \beta_0 + \beta_1\cdot prbarr + \beta_2\cdot prconv+ \beta_3\cdot density+ \beta_4\cdot taxpc+ \beta_5\cdot pctymle+ \beta_6\cdot pctymle + error$$
+$$ Omitted \ variables = Morals, Diet, MH, Happiness, FS, Drugs, and \ prbrc $$
+As shown in the table above, the first row displays the impact the omitted variables have on the outcome variable crmrate.
+
+###Morals omitted
+
+$$ B_1 = (-) $$
+$$ Morals= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 $$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Mental Health (MH) Omitted
+$$ B_1 = (-) $$
+$$ Mental \  Health= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot taxpc $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 \ and \  \alpha_3\cdot taxpc>0$$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Happiness Omitted
+
+$$ B_1 = (-) $$
+$$ Happiness= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot taxpc $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 \ and \  \alpha_3\cdot taxpc>0$$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Family Stability (FS) Omitted
+
+$$ B_1 = (+) $$
+$$ Family \ Stability= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 $$ 
+
+The OLS coeffecient will be more positive, therefore gaining statistical significance. 
+
+### Drugs in area (Drugs) Omitted
+
+$$ B_1 = (+) $$
+
+
+$$ Drugs= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot density+ \alpha_4\cdot pctymle $$
+$$\alpha_1\cdot prbarr<0 \ and\  \alpha_2\cdot prbcov<0 \ and\ \alpha_3\cdot density>0 \ and\  \alpha_4\cdot pctymle>0$$
+The OLS coeffecient will be more positive, therefore gaining statistical significance. 
+
+### Probability of Reported Crimes (prbrc) Omitted
+
+$$ B_1 = (+) $$
+
+$$ prbrc= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+
+$$ \alpha_1\cdot prbarr<0  \ and \  \alpha_2\cdot prbcov<0 $$ 
+The OLS coeffecient will be less positive, therefore losing statistical significance. 
 
 
 # Conclusion
