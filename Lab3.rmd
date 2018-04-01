@@ -229,6 +229,16 @@ We identified seven omitted variables that may introduce bias to the crime rate 
 
 The table below shows omitted variables' effect on both the measure variables and the outcome (crime rate). A value or (1) represents that the omitted variable has a positive correlation with the measured or outcome variable, a (-1) represents that the omitted variable has a negative correlation with the measured or outcome variable, and a (0) represents the omitted variable has no impact on the measured or outcome variable. 
 
+Omitted Variable   Morals   Diet   MH   Happiness  FS   Drugs   prbrc
+-----------------  -------  -----  ---  ---------  ---  ------  ------
+crmrate (B1)       -1        0     -1     -1        -1     1       1  
+prbarr             -1        0     -1     -1        -1     1       1  
+prbconv            -1        0     -1     -1        -1     1       1    
+density             0       -1      0      0         0     1       0 
+taxpc               0        1      1      1         0     0       0 
+pctmin80            0        0      0      0         0     0       0 
+pctymle             0       -1      0      0         0     1       0
+
 The equation for model_2 is:
 $$ crmrate = \beta_0 + \beta_1\cdot prbarr + \beta_2\cdot prconv+ \beta_3\cdot density+ \beta_4\cdot taxpc+ \beta_5\cdot pctymle+ \beta_6\cdot pctymle + error$$
 $$ Omitted \ variables = Morals, Diet, MH, Happiness, FS, Drugs, and \ prbrc $$
