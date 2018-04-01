@@ -9,11 +9,10 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE, include = TRUE, warning = FALSE, message = FALSE, dev = 'pdf', fig.height = 4)
 library(dplyr)
 library(ggplot2)
-library(GGally) # for ggcorr
+library(GGally)
 library(lmtest)
 library(sandwich)
 library(stargazer)
-library(tables)
 ```
 
 # Introduction
@@ -226,27 +225,61 @@ For model 2, we added in variables that increase the accuracy of our result with
 
 # Omitted Variables
 
-We propose seven omitted variables that may introduce bias to the crime rate outcome. The seven variables (by no means an exhaustive list) are a person's morals (Morals), a healthy diet (Diet), a person's mental health (MH), a person's happiness (Happiness), a person's family stability (FS), the amount of drugs in the area (Drugs), and the probability a person will report a crime (prbrc). 
+We identified seven omitted variables that may introduce bias to the crime rate outcome. The seven variables are a person's morals (Morals), a healthy diet (Diet), a person's mental health (MH), a person's happiness (Happiness), a person's family stability (FS), the amount of drugs in the area (Drugs), and the probability a person will report a crime (prbrc). 
 
 The table below shows omitted variables' effect on both the measure variables and the outcome (crime rate). A value or (1) represents that the omitted variable has a positive correlation with the measured or outcome variable, a (-1) represents that the omitted variable has a negative correlation with the measured or outcome variable, and a (0) represents the omitted variable has no impact on the measured or outcome variable. 
 
-Omitted Variable  Morals   Diet   MH   Happiness  FS   Drugs   prbrc
----------------   -------  -----  ---  ---------  ---  ------  ------
-crmrate           -1        0     -1     -1        -1     1       1  
-prbarr            -1        0     -1     -1        -1     1       1  
-prbconv           -1        0     -1     -1        -1     1       1    
-prbpris           -1        0     -1     -1        -1     1       1         
-avgsen            -1        0     -1     -1        -1     1       1  
-polpc              0        0      0      0         0     1       0 
-density            0       -1      0      0         0     1       0 
-taxpc              0        1      1      1         0     0       0 
-pctmin80           0        0      0      0         0     0       0 
-wage               0        1      1      1         1    -1       1  
-mix                0        0     -1     -1        -1     1       0 
-pctymle            0       -1      0      0         0     1       0 
+The equation for model_2 is:
+$$ crmrate = \beta_0 + \beta_1\cdot prbarr + \beta_2\cdot prconv+ \beta_3\cdot density+ \beta_4\cdot taxpc+ \beta_5\cdot pctymle+ \beta_6\cdot pctymle + error$$
+$$ Omitted \ variables = Morals, Diet, MH, Happiness, FS, Drugs, and \ prbrc $$
+As shown in the table above, the first row displays the impact the omitted variables have on the outcome variable crmrate.
 
-To determine the direction each omitted variables drives our outcome variable, we will only consider the omitted variable's impact on outcome variable and density, because it was the highest correlated to the outcome variable. The only two omitted variables that had an impact on density were Diet and Drugs. Diet had a negative impact on density, however it had no direct impact on crime rate, thus there is no bias introduced with the diet omitted variable. The Drugs variable had a positive impact both on crime rate and density. Therefore, density's impact has on crime rate is underestimated.   
+###Morals omitted
+
+$$ B_1 = (-) $$
+$$ Morals= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 $$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Mental Health (MH) Omitted
+$$ B_1 = (-) $$
+$$ Mental \  Health= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot taxpc $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 \ and \  \alpha_3\cdot taxpc>0$$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Happiness Omitted
+
+$$ B_1 = (-) $$
+$$ Happiness= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot taxpc $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 \ and \  \alpha_3\cdot taxpc>0$$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Family Stability (FS) Omitted
+
+$$ B_1 = (-) $$
+$$ Family \ Stability= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 $$ 
+
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+### Drugs in area (Drugs) Omitted
+
+$$ B_1 = (+) $$
+
+
+$$ Drugs= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot density+ \alpha_4\cdot pctymle $$
+$$\alpha_1\cdot prbarr<0 \ and\  \alpha_2\cdot prbcov<0 \ and\ \alpha_3\cdot density>0 \ and\  \alpha_4\cdot pctymle>0$$
+The OLS coeffecient will be more positive, therefore gaining statistical significance. 
+
+### Probability of Reported Crimes (prbrc) Omitted
+
+$$ B_1 = (+) $$
+
+$$ prbrc= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr<0  \ and \  \alpha_2\cdot prbcov<0 $$ 
+The OLS coeffecient will be less positive, therefore losing statistical significance. 
+
 
 # Conclusion
 
-We found population density to be the best predictor of crime rate in North Carolina.  
+We found that the population density is the best predictor we have available for crime rate.  However, it is unlikely that any political platform could make a direct effect to the how closely people live together.  The other variable more tractable.  Of the three probabilities of punishment, arrest has the highest impact on crime rate.  Simply increasing police per capita does not seem to be having an effect of decreasing crime rate significantly.  It may be more prudent to dedicate more resources for the existing police force so that more arrests can be made without necessarily increasing police presence.
