@@ -1,0 +1,166 @@
+---
+title: "Lab 3"
+author: "David Hou, Scott Hungerfield, Irene Seo"
+date: "March 20, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(GGally) # for ggcorr
+library(stargazer)
+```
+
+# Introduction
+
+The purpose of this study is to provide information for political campaign in North Carolina.  Specifically, we want to determine what variables contribute to crime rate and help the campaign propose policy suggestions to local governments.  To accomplish this, we were given crime data from several North Carolina counties along with other variables.  We will run ordinary least square regressions to help determine which of these are the best predictors of crime.
+
+# Data Cleaning
+
+First we need to clean the data.  In the raw data, we notice that the last 6 rows are empty.  The integer columns are probably more useful to us as factors.  The prbconv is coded as a factor, so we turn it into a numeric.
+
+We also notice that prbarr and prbconv have values that are greater than 1, which does not make much sense because they are probability variables.  We assume that these values were coded incorrectly and filter those out.
+
+As a minor change, we divide pctmin80 by 100, so that it matches the formatting of pctymle.  Both variables are percentages and we've arbitrarily chosen to represent them as a number between 0 and 1 rather than 0 to 100.
+```{r data_cleaning}
+raw = as_tibble(read.csv('crime_v2.csv'))
+t = raw %>% 
+    filter(!is.na(county)) %>%
+    mutate(prbconv = as.numeric(as.character(prbconv))) %>%
+    mutate(pctmin80 = pctmin80 / 100) %>%
+    mutate_if(is.integer, as.factor) %>%
+    filter(prbarr < 1 & prbconv < 1)
+levels(t$west) = c('East', 'West')
+t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
+levels(t$central) = c('Outer', 'Central')
+levels(t$urban) = c('Non-urban', 'Urban')
+```
+
+We also do not see an advantage to analyzing each wage individually by the industry.  Thus, we create a new column that is the sum of all the wage columns.
+```{r data_transformations}
+t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
+```
+
+Here is a summary of the data.
+```{r summary}
+stargazer(data.frame(t), type = 'text')
+```
+
+# Examining Key Variables of Interest
+
+```{r crmrte_hist}
+qplot(t$crmrte, col = I('white')) + 
+    labs(title = 'Crime Rate', x = 'Crimes Committed per Person')
+summary(t$crmrte)
+```
+
+We see that the main variable of interest, crime rate, has some positive skew, but does not seem to have a very exotic distribution.  To determine which variables are of interest to us when predicting crime rate, we look at the correlation matrix among the variables.
+
+```{r correlation_matrix}
+t2 = t %>% select(crmrte, prbarr, prbconv, prbpris, avgsen, polpc, density, taxpc, pctmin80, mix, pctymle, wage)
+ggcorr(t2, label = TRUE, label_round = 2, label_size = 3, size = 3) + ggtitle('Correlation Matrix')
+```
+
+From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = `r round(cor(t$crmrte, t$density), 2)`).  This variable looks like a good candidate as a causal predictor for crime rate.  One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.
+
+```{r crmrte_vs_density}
+qplot(t$density, t$crmrte) +  
+    labs(title = 'Crime Rate vs Population Density', x = 'People per Square Mile',
+         y = 'Crimes Committed per Person') + 
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+The other two variables with moderately positive correlation are tax per capita (r = `r round(cor(t$crmrte, t$taxpc), 2)`) and wages (r = `r round(cor(t$crmrte, t$wage), 2)`).  It is interesting to note that taxes and wages are not very correlated with themselves (r = `r round(cor(t$taxpc, t$wage), 2)`).  This finding is surprising, as one would expect that wages and taxes would go up very closely with each other.  Also note that population density is weakly correlated with taxes (r = `r round(cor(t$taxpc, t$density), 2)`) and moderately correlated with wages (r = `r round(cor(t$wage, t$density), 2)`).  We believe that taxes and wages are not directly causing higher crime rates but could be good indirect indicators.
+
+```{r crmrte_vs_taxpc}
+qplot(t$taxpc, t$crmrte) + 
+    labs(title = 'Crime Rate vs Taxes', x = 'Tax Revenue per Capita', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+```{r crmrte_vs_wage}
+qplot(t$wage, t$crmrte) + 
+    labs(title = 'Crime Rate vs Wages', x = 'Weekly Wages', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+Interestingly, the relationship between police per capita and crime rate is positive and moderately large (r = `r round(cor(t$crmrte, t$polpc), 2)`).  This means that either increasing police presence makes crime rate worse or that crime is causing an increase in police presence rather than vice versa.  The latter explanation seems much more logical.
+
+```{r crmrte_vs_polpc}
+qplot(t$polpc, t$crmrte) + 
+    labs(title = 'Crime Rate vs Police Presence', x = 'Police per Capita',
+         y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+Of the three "certainty of punishment" variables, it looks like arrest probability has a moderate effect (r = `r round(cor(t$crmrte, t$prbarr), 2)`) and conviction probability has a weak effect (r = `r round(cor(t$crmrte, t$prbconv), 2)`), but probability of prison sentence has almost no effect (r = `r round(cor(t$crmrte, t$prbpris), 2)`).  It is important to note that these three probabilities seem uncorrelated with one another, so we will include multiple ones in our regression without fear of multicolinearity.  The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = `r round(cor(t$crmrte, t$avgsen), 2)`).
+
+```{r crmrte_vs_prbarr}
+qplot(t$prbarr, t$crmrte) + 
+    labs(title = 'Crime Rate vs Arrest Probability', x = 'Arrest Probability',
+         y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+```{r crmrte_vs_prbconv}
+qplot(t$prbconv, t$crmrte) + 
+    labs(title = 'Crime Rate vs Conviction Probability', x = 'Conviction Probability', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+
+We also see that percentage of young male is slightly correlated with crime rate.
+```{r crmrte_vs_pctymle}
+qplot(t$pctymle, t$crmrte) + 
+    labs(title = 'Crime Rate vs Young Male percentage', x = 'Young Male percentage', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+
+# Model Building
+
+First we include key varialbes with high correlation coefficients that we identified above- density, probability of arrest, and tax per capita.
+
+```{r models}
+m0 = lm(t$crmrte ~ t$density)
+m1 = lm(t$crmrte ~ t$prbarr)
+m2 = lm(t$crmrte ~ t$taxpc)
+m3 = lm(t$crmrte ~ t$density + t$prbarr + t$taxpc)
+stargazer(m0, m1, m2, m3, type = 'text')
+```
+
+As probability of arrest increases by 5.5%, as tax revenue per capita decreases by 100 dollars (???), and as population is less dense by ???, crime rate falls by 1%.  As the standard of arresting is more strict, crime rates are expected to be lower.  This model can explain 62.3% of the change in crime rates.
+
+
+# Finding the best fit model
+Next we add more variables to make our model more precise.  However, we would like to leave out variables that absorb the causal effects, such as police per capita variable.
+
+```{r models}
+m5 = lm(t$crmrte ~ t$density + t$prbarr + t$prbconv + t$pctymle + t$taxpc + t$pctmin80)
+m6 = lm(t$crmrte ~ t$prbarr + t$prbconv + t$prbpris + t$avgsen + t$density + t$taxpc + t$pctmin80 + t$mix + t$pctymle + t$wage)
+stargazer(m5, m6, type = 'text')
+```
+
+With the highest $R^2$ at 0.785, our best fit model includes the following variables - density, probability of arrest, probability of conviction, percentage of young male, percentage of minority, and tax revenue.  Crime rates can be best predicted when taking all of theses varialbes into consideration.
+
+<Conclusion>
+Crime rate can decrease by 1%(??) with following measures:
+1. Increase police presence in areas with higher population density
+2. Make arresting and convicting standards more strict
+3. Make more programs targeted towards keeping young male minorities out of crime
+4. Decrease tax rate
+
+
+# Omitted Variables
+
+measured coefficient = true coefficient + omitted variable bias
+alpha1 = beta1 + beta2 delta1
+y = beta0 + beta1x1 + ... + betak xk + u
+omit xk
+xk = delta0 + delta1x1 +... + delta(k-1)x(k-1)
+y = (beta0 + betak delta0) + (beta1 + betak delta1)x1 + ... + (beta(k-1) + betak delta(k-1))x(k-1)
+                                -.059 = beta1 + (-)(-)
+                                beta1 < -.059
+Morality ~ (0)density (-)prbarr (-)prbconv (0)taxpc (0)pctmin80 (-)pctymle 
+Education
+Climate
