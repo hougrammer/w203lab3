@@ -1,0 +1,463 @@
+---
+title: "Lab 3"
+author: "David Hou, Scott Hungerfield, Irene Seo"
+date: "March 20, 2018"
+output: 
+  pdf_document: 
+    latex_engine: lualatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, include = TRUE, warning = FALSE, message = FALSE, dev = 'pdf', fig.height = 4, cache = TRUE)
+library(dplyr)
+library(ggplot2)
+library(ggfortify) # autoplot
+library(GGally) # ggcorr
+library(ggpubr) # ggarrange
+library(lmtest)
+library(sandwich)
+library(stargazer)
+```
+
+# Introduction
+
+The purpose of this study is to provide information for a political campaign in North Carolina.  Specifically, we want to determine what variables contribute to crime rate and help the campaign propose policy suggestions to local governments.  To accomplish this, we were given crime data from several North Carolina counties along with other variables.  We will run ordinary least square regressions to help determine which of these are the best predictors of crime.
+
+# Data Cleaning
+
+First we need to clean the data.  In the raw data, we notice that that the last 6 rows are empty.  The integer columns are probably more useful to us as factors.  The prbconv is coded as a factor, so we turn it into a numeric.
+
+We also notice that prbarr and prbconv have values that are greater than 1, which does not make much sense because they are probability variables.  Specifically, we find nine cases where prbconv is greater than 1 and one case where both are greater than one.  We create a badprb flag which is set to 1 for the former nine cases and 2 for singular latter case.  We also create a second data table, where all the questionable probabilities are removed.
+
+As a minor change, we divide pctmin80 by 100, so that it matches the formatting of pctymle.  Both variables are percentages and we've arbitrarily chosen to represent them as a number between 0 and 1 rather than 0 to 100.
+
+```{r data_cleaning}
+raw = as_tibble(read.csv('crime_v2.csv'))
+
+t = raw %>% 
+    filter(!is.na(county)) %>%
+    mutate(prbconv = as.numeric(as.character(prbconv))) %>%
+    mutate(pctmin80 = pctmin80 / 100) %>%
+    mutate_if(is.integer, as.factor) %>%
+    mutate(badprb = as.factor((prbarr > 1) + (prbconv > 1)))
+levels(t$west) = c('East', 'West')
+t$west = relevel(t$west, 'West') # Put West first so it appears on the left on facet plots 
+levels(t$central) = c('Outer', 'Central')
+levels(t$urban) = c('Non-urban', 'Urban')
+levels(t$badprb) = c('Normal', 'prbconv > 1', 'prbarr > 1 and prbconv > 1')
+
+t2 = t %>% 
+    filter(prbarr < 1 & prbconv < 1)
+```
+
+
+Here is a summary of the data (with the questionable probabilities left in).
+```{r summary, results='asis'}
+stargazer(data.frame(t), type = 'latex', header = FALSE, float = FALSE)
+```
+
+# Examining Key Variables of Interest
+
+## Metric Variables
+
+We start our analysis by first looking at the metric variables, i.e. all the variables less county, year, west, central, and urban.  Crime rate is our most important variable as it is the output that we are trying to study.
+
+```{r crmrte_hist, fig.height=3}
+qplot(t$crmrte, col = I('white')) + 
+    labs(title = 'Crime Rate', x = 'Crimes Committed per Person')
+```
+
+We see that crime rate has some positive skew, but does not seem to have a very exotic distribution.  To determine which variables are of interest to us when predicting crime rate, we look at the correlation matrices among the variables.  Since a large portion of dataset deals with wage, let us first examine those variables by themselves.  We first take a look at the correlation matrix among them and crime rate.
+
+```{r wage_cor, fig.height=5}
+ggcorr(t %>% select(crmrte, wcon, wtuc, wtrd, wfir, wser, wmfg, wfed, wsta, wloc),
+       label = TRUE, label_round = 2, label_size = 3, size = 3) + 
+    ggtitle('Correlation Matrix of Crime Rate and Wages')
+```
+Surprisingly, we find that crime rate is actually positively correlated with all wages except from the service industry.  This seems counter to common sentiment that crime is more prevalent in low income areas.
+
+For ease of comparison with the other variables, we create a new one that is the sum of all the other wages.  We will see later that this data transformation does not make a large difference in the regression analysis.
+
+```{r correlation_matrix, fig.height=5}
+t = t %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
+t2 = t2 %>% mutate(wage = wcon + wtuc + wtrd + wfir + wser + wmfg + wfed + wsta + wloc)
+
+ggcorr(t %>% select(crmrte, prbarr, prbconv, prbpris, avgsen, polpc, density, taxpc, pctmin80, mix, pctymle, wage),
+       label = TRUE, label_round = 2, label_size = 3, size = 3) + 
+    ggtitle('Correlation Matrix')
+```
+
+From the correlation matrix, we see that population density stands out as being highly correlated with crime rate (r = `r round(cor(t$crmrte, t$density), 2)`).  This variable looks like a good candidate as a predictor for crime rate.  One explanation could be that as more people move into an area, the increased number of interactions give opportunity for more crime.  In addition, more people in an area probably increases the chance that crime will actually be seen.
+
+The other two variables with moderately positive correlation are tax per capita (r = `r round(cor(t$crmrte, t$taxpc), 2)`) and total wages (r = `r round(cor(t$crmrte, t$wage), 2)`).  Note that population density is weakly correlated with taxes (r = `r round(cor(t$taxpc, t$density), 2)`) and moderately correlated with wages (r = `r round(cor(t$wage, t$density), 2)`).  We believe that taxes and wages are not directly causing higher crime rates but are rising along with crime rate because they are rising along with density.  Also, it is interesting that taxes and wages are not very correlated with themselves (r = `r round(cor(t$taxpc, t$wage), 2)`).  This finding is surprising, as one would expect that wages and taxes would go up very closely with each other.  Along with the questionable probability numbers, we are left to question the integrity of this dataset.  At the minimum, we desire some extra explanation as to how the data were taken. 
+
+An important finding is that the relationship between police per capita and crime rate is positive (r = `r round(cor(t$crmrte, t$polpc), 2)`).  This means that either increasing police presence makes crime rate worse or that crime is causing an increase in police presence rather than vice versa.  The latter explanation seems much more logical.  Thus, we will not regress crime rate on police per capita, as the direction of causality is questionable.
+
+Of the three "certainty of punishment" variables, it looks like arrest probability has a moderate effect (r = `r round(cor(t$crmrte, t$prbarr), 2)`) and conviction probability has a weak effect (r = `r round(cor(t$crmrte, t$prbconv), 2)`), but probability of prison sentence has almost no effect (r = `r round(cor(t$crmrte, t$prbpris), 2)`).  It is important to note that these three probabilities seem uncorrelated with one another, so we can include multiple ones in our regression without fear of multicolinearity.  The "severity of punishment" variable, average prison sentence length, does not seem to be correlated with crime rate (r = `r round(cor(t$crmrte, t$avgsen), 2)`).
+
+Finally, the two demographic variables seem to have relatively weak correlations with crime rate. However, their directions are at least in line with historic sentiment (young male minorities are commonly associated with crime).
+
+Below are the bivariate scatter plots between crime rate and each of the input variables.  The linear regression lines are shown on the plots for convenience but are not meant to be rigorous models at this point.  We have also divided the variables up into two rough groups: one dealing directly dealing with law enforcement and one dealing with socioeconomic/demographic factors.
+
+### Law Enforcement Variables
+```{r law_enforcement_plots, fig.height=9}
+p1 = qplot(t$prbarr, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Arrest Probability', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p2 = qplot(t$prbconv, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Conviction Probability', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p3 = qplot(t$prbpris, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Prison Probability', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p4 = qplot(t$avgsen, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Average Sentence Length', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p5 = qplot(t$polpc, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Police per Capita', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p6 = qplot(t$mix, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Percent Face-to-Face Crime', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+ggarrange(p1, p2, p3, p4, p5, p6, nrow = 3, ncol = 2, common.legend = T)
+```
+
+Immediately, we notice that the counties with anomalous conviction probabilities are problematic.  Instead of being uniformly distributed among the data, they are all very good in terms of having low crime rate.  County 115 (Madison County[^1]) is the point with both arrest probability and conviction probability greater than 1.  It has the lowest crime rate among all counties.  Madison County also has the longest average prison sentence length and most police per capita by far.  In essence, Madison County seems like one in which law enforcement is extremely strict and has very low crime rate as a result.
+
+[^1]: We assume the county numbers in the dataset are Federal Processing Standard Publication (FIPS) numbers.  The North Carolina FIPS codes were found at https://en.wikipedia.org/wiki/List_of_counties_in_North_Carolina. 
+
+### Socioeconomic/Demographic Variables
+```{r socioeconomic_plots, fig.height=9}
+p7 = qplot(t$density, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Population Density', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p8 = qplot(t$taxpc, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Tax per Capita', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p9 = qplot(t$pctmin80, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Percent Minority (1980)', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p10 = qplot(t$pctymle, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Percent Young Male', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+p11 = qplot(t$wage, t$crmrte, col = t$badprb) + 
+    labs(title = NULL, col = NULL, x = 'Sum of Wages', y = 'Crimes Committed per Person') +
+    geom_smooth(method = 'lm', se = FALSE)
+ggarrange(p7, p8, p9, p10, p11, nrow = 3, ncol = 2, common.legend = T)
+```
+
+Again, we notice the problematic high punishment probability counties.  This time, we find Madison County is very low in population density, tax per capita, minority population, and percent young male.  Indeed, the county is sparsely populated and located in the Appalachian Mountains, within heavy forests[^2].
+
+[^2]: This information from https://en.wikipedia.org/wiki/Madison_County,_North_Carolina.
+
+## Dummy Variables
+
+Next, we examine the effect of the three dummy indicators.  First we see if there is a difference in crime rate between non-urban and urban counties.  As an aside, we are assuming "non-urban" refers to a combination of suburb-dominated and rural areas.  We are not sure if this geographical assumption is actually true in North Carolina.
+
+```{r urban}
+ggplot(t, aes(crmrte)) + 
+    geom_histogram() + 
+    facet_grid(. ~ urban) + 
+    theme(panel.spacing = unit(2, "lines")) +
+    labs(title = 'Non-urban vs Urban Crime Rate', x = 'Crime Rate')
+```
+We see that there are only `r sum(t$urban == 'Urban')` counties coded as urban, which is probably too few to make any sweeping inferences.  We will only mention in passing that the crime rate in urban counties does look higher than that in non-urban counties.
+
+Next we examine the differences in geographic region.  Here, we assume the 'west' and 'central' variables are non-exclusive.  That is, we assume a county can be both a western county and a central county.  
+
+```{r region}
+ggplot(t, aes(crmrte)) + 
+    geom_histogram() + 
+    facet_grid(west ~ central) + 
+    theme(panel.spacing = unit(1, "lines")) +
+    labs(title = 'Crime Rate by Region', x = 'Crime Rate')
+```
+Again we notice a sparcity in data; this time there are only `r sum(t$west == 'West')` western counties, with a mere single county in the western central area.  However, we do see a relatively even division between central and outer counties, so we will run a t-test to see if there is any difference in crime rate between the two.  
+
+```{r t-test}
+t.test(t[t$central == 'Outer', ]$crmrte, 
+       t[t$central == 'Central', ]$crmrte)
+```
+With a p-value of 0.16, we fail to reject the null hypothesis that there is difference in crime rate between central and outer counties.
+
+## EDA Summary and Research Questions for Model Building
+
+From our EDA, we think that the best predictor for crime rate is population density.  We see that arrest probability is also a decent predictor.  These two constitute one law-enforcement variable and one demographic variable.  Therefore, we will start by building models with these two predictors and then augment with other variables.
+
+There does not seem to be strong enough evidence to investigate the geographical effects (west vs east, central vs outer, etc.).
+
+We also found in our EDA that there are several very problematic with counties with conviction probabilities greater than 1.  From this point forward, we will proceed by removing them from our data analysis (i.e. using t2 for our regressions).  The rationale behind the omission are as follows:
+
+1. These counties are obviously special in some way.  From the bivariate scatterplots, it is apparent that they tend to cluster low on the y-axis.
+2. These counties make up a small number of the data set.
+3. These counties have low population density (with Madison County being the most sparsely populated county in the whole data set).  With the fewer number of people, it is possible that data collection was more prone to error.
+4. Fundamentally, probabilities greater than 1 simply make no sense.
+
+
+# Model Building
+
+We will now proceed to build several ordinary least squares (OLS) regression models of crime rate.  We will be reporting heteroskedasticity robust standard errors.
+
+## Wage Transformation
+Before investigating the main regression models, we first examine whether combining the wages was a prudent choice.
+
+```{r seHC}
+# function for getting heteroskedasticity robust standard errors
+seHC = function(...) {
+    lapply(list(...), function(x) sqrt(diag(vcovHC(x))))
+}
+```
+
+```{r wage_models, results='asis'}
+m1_wage = lm(t2$crmrte ~ t2$wfed)
+m2_wage = lm(t2$crmrte ~ t2$wcon + t2$wtuc + t2$wtrd + t2$wfir + t2$wser + t2$wmfg + 
+                 t2$wfed + t2$wsta + t2$wloc)
+m3_wage = lm(t2$crmrte ~ t2$wage)
+
+stargazer(m1_wage, m2_wage, m3_wage, type = 'latex',
+          omit.stat = c('f', 'n'),
+          se = seHC(m1_wage, m2_wage, m3_wage),
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          dep.var.labels = c('Crime Rate'),
+          header = FALSE, 
+          float = FALSE,
+          title = 'Crime Rate Regressed on Wage Variables',
+          covariate.labels = c('Construction', 'Trans, Util, Commun', 'Whlesle, Retail, Trade', 
+                               'Fin, Ins, Real Est', 'Service', 'Manuacturing', 'Federal', 'State', 
+                               'Local', 'Total Sum')
+)
+```
+We see from the regression table that including each individual wage variable in the regression only provides a small improvement in adjusted $R^2$ from including just the federal wages.  It also causes all the coefficients to lose signifance.  When we combine all the wages into a sum, we see that the adjusted $R^2$ improves more and we end up with a single highly-significant coefficient.  Thus, the total wage variable is a parsimonious way to model the wage effect.
+
+With respect to practical significance, none of the wage models may be that influential.  The coefficient on total sum of wages is `r round(m3_wage$coefficients[[2]], 6)`. A rise of \$1,000 in weekly wages would only cause `r round(m3_wage$coefficients[[2]], 6) * 1000` extra crimes per person.
+
+## Main Models
+
+Now we will proceed to build models with all the other variables.  We start with our base model, involving only population density and arrest probability.  
+
+```{r model1}
+m1 = lm(t2$crmrte ~ t2$density + t2$prbarr)
+coeftest(m1, vcov. = vcovHC)
+```
+
+We find high statistical significance for the arrest probability coefficient; very high significance for the population density coefficient.  Each unit increase in population density seems to bring 0.007 crimes with him or her.  Each percent increase in arrest probability takes away 0.0005 crimes.  We note that these numbers are a little difficult to comprehend practically.  It is nonintuitive how big an effect of 0.0005 crimes.  Thus, we propose a second model, where we instead regress the natural logarithm of crime rate ($\ln(crmrte)$).  The interpretation of the new output variable is the proportional change in crime rate with respect to differential changes in the input variables.  This interpretation makes more intuitive sense (e.g. a 10% increase in crime rate is easier to grasp than 5/1000th of a crime).
+
+```{r model2}
+m2 = lm(log(t2$crmrte) ~ t2$density + t2$prbarr)
+coeftest(m2, vcov. = vcovHC)
+```
+
+In this new model, we now have very high statistical significance in all of our coefficients.  It is also at this point that we notice a unit increase in density causes a 16.5% decrease in crime rate.  This alarmingly high percentage prompts us to check on the units of population density (something glossed over in our initial EDA).  In the dataset, county 119 (Mecklenburg County) has the maximum density at `r round(max(t2$density), 2)`.  In 2018, we see that Mecklenburg has population 944,373 in 546 square miles, or about 1730 people per square mile[^3].  Since the data is older, we will assume that density is measured in people X100.  Now we see that a single person causes a 0.165% increase in crime rate (more reasonable).
+
+We also see that a percent increase in arrest probability generally causes a 1.52% decrease in crime.  Obviously arrest probability can't increase ad infinitum, so the effect cannot continue forever (yet another reason to eliminate the questionable probabilities from earlier).  We can consider applying a logit transformation to arrest probability to confine the variable within 0 to 1, but we lose a lot of the interprebality of the arrest probability variable--it is easier to talk about an arrest probability of 50% than to talk about a log-odds of 0.  Still, we will very briefly investigate to see if a logit transformation at least improves our fit.
+
+[^3]: Population data from https://en.wikipedia.org/wiki/List_of_counties_in_North_Carolina.
+
+```{r model2_logit}
+logit = function(x) log(x/(1-x))
+summary(m2)$r.square
+summary(lm(log(t2$crmrte) ~ t2$density + logit(t2$prbarr)))$r.square
+```
+We find virtually no difference with the logit transformed probability and will forego it in favor of ease of interprebability.  Now we return to the diagnostic plots of model 2.
+
+Since $\log(crmrte)$ is a bit easier to interpret than straight number of crimes per person, we will continue building our models with it.
+
+In our third model, we will add in several covariates with density and arrest probability but will not include ones highly correlated with density, arrest probability, or themselves.  This is to minimize the absorption of any causal effect.  The variables we add are
+
+* Conviction probability
+* Prison probability
+* Average sentence probability
+* Percent minority
+* Percent young male
+
+We have added all the law-enforcement variables with the exception of police per capita.  As explained above, we think police per capita is responding to crime rate and not the other way around.  We also added the two demographic variables, but did not add the two economic ones.  This latter omission is due to both taxes and wages being correlated with population density.  Our rationale is explained further in the EDA section.  We also do not include the mix variable due its high correlation with arrest probability.
+
+```{r model3}
+m3 = lm(log(t2$crmrte) ~ t2$density + t2$prbarr + t2$prbconv + t2$prbpris + 
+            t2$avgsen + t2$pctmin80 + t2$pctymle)
+coeftest(m3, vcov. = vcovHC)
+```
+
+We see that both of our original variables retain their high degree of statistical signifance.  The two newly added variables that are statistically significant are conviction probability and minority percentage.  The former results in a 0.66% decrease in crime rate for each percent increase; the latter results in a 1.16% increase in crime rate for each percent increase.  
+
+In practical perspective, arrest probability, percent young male, and percent minority have relatively higher practical significances among the variables in changing crime rates. As probability arrest increases by 1%, crime rate falls by 2.1%, and as percentage of young male increases by 1%, crime rate increases by 1.9%. As percentage of minority increases by 1%, crime rate goes up by 1.16%.
+
+For our last model, we include the remaining covariates that were excluded due to correlation with existing covariates.
+
+```{r model4}
+m4 = lm(log(t2$crmrte) ~ t2$density + t2$prbarr + t2$prbconv + t2$prbpris + t2$avgsen
+        + t2$pctmin80 + t2$pctymle + t2$taxpc + t2$mix + t2$wage)
+coeftest(m4, vcov. = vcovHC)
+```
+The coefficients of density, arrest probability, percent minority are still statistically significant, despite adding in multiple correlated variables.  We did gain additional high significance predictors, such as percent young male, but conviction probability lost statistical significance.
+
+We notice that percent young male has gained more practical significance, a percent increase resulting in 3.05% increase in crime rates.  We also see that other coefficients lost practical significance, including percent young male. Arrest probability's practical significance has been reduced as well, resulting in 1.75%  decrease in crime for a percent increase.
+
+Below is a summary of the models
+
+
+```{r models, results='asis'}
+stargazer(m1, m2, m3, m4, type = 'latex',
+          omit.stat = c('f', 'n'),
+          se = seHC(m1, m2, m3),
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          header = FALSE, 
+          float = FALSE,
+          dep.var.labels = c('Crime Rate', 'log(Crime Rate)'),
+          title = 'Crime Rate Regressed on Other Variables',
+          covariate.labels = c('Population Density', 'Arrest Probability', 'Conviction Probability',
+                               'Prison Probability', 'Average Prison Sentence', 'Tax per Capita',
+                               'Percent Minority', 'Offense Mix', 'Percent Young Male',
+                               'Sum of Wages')
+)
+```
+
+We see that the level-level model had a higher $R^2$ than the log-level model.  However, we maintain that the ease of interprebability makes model 2 superior.  In any case, adding in the non-correlated covariates allowed us to explain over 2/3 of the variation in crime rate.  Obviously, adding in all the additonal covariates will increase $R^2$ even further (though not by much), but we do not think model 4 is the best model due to the extra complexity.
+
+# Classical Linear Model Assumptions
+In this section we will investigate whether any of the 6 CLM assumptions were violated.  Mostly, we will be analyzing model 1, model 2 and model 3.
+
+\begin{align*}
+&\text{Model 1:}\ \ \ \  &crmrte &= \beta_0 + \beta_1\ density + \beta_2\ prbconv + u \\
+&\text{Model 2:}\ \ \ \  &\ln(crmrte) &= \beta_0 + \beta_1\ density + \beta_2\ prbconv + u \\
+&\text{Model 3:}\ \ \ \  &\ln(crmrte) &= \beta_0 + \beta_1\ density + \beta_2\ prbconv + \beta_3\ prbarr + \beta_4\ prbpris + \beta_5\ avgsen + \beta_6\ pctmin80 + \beta_7\ pctymle + u
+\end{align*}
+
+
+## Linearity
+All models are specified as an output variable in relation to a linear combination of input variables.
+
+## Random Sampling
+While we've seen several problems with data integrity within this data set, we have no reason to believe that the counties were not sampled randomly from the same population (North Carolina).
+
+## Perfect Multicolinearity
+Density and and conviction probability are obviously not perfectly colinear.  In fact, none of the variables in the data set with the exception of the manufactured wage-sum variable has perfect colinearity with each other.
+
+## Zero Conditional Mean
+At this point, let us examine the diagnostic plots for our models.
+
+```{r model1_plots, fig.height=3}
+autoplot(m1, which = 1)
+```
+
+For model 1, we see from the residuals vs fitted values plot that there is some evidence of non-zero conditional error mean. This means our coefficients will be biased. We can try and troubleshoot this with model specification, which is model 2 in this case.
+
+```{r model2_plot, fig.height=3}
+autoplot(m2, which = 1)
+
+```
+
+We now see a better residuals vs fitted values plot (much closer to zero conditional mean) for model 2.
+
+
+```{r model3_plot, fig.height=3}
+autoplot(m3, which = 1)
+```
+
+Even with log transformation of crime rates variable, reversed parabolic shape gives a strong evidence that zero-conditional mean assumption is violated in model 3. This can be explained by omitted variables that are hidden in u and correlated with our independent variables, which will be explained in details in the next section.
+
+## Homoskedasticity
+```{r model1_hmsplots, fig.height=8}
+autoplot(m1, which = 2:6)
+```
+
+```{r model2_hmsplots, fig.height=8}
+autoplot(m2, which = 2:6)
+```
+
+```{r model3_hmsplots, fig.height=8}
+autoplot(m3, which = 2:6)
+```
+
+The scale-location plots of all models actually look fairly decent in terms of residual spread.  However, Q-Q plot for model 1 and model 3 show skewness to the right and to the left, respectively. In model 2, we see a clear improvement in Q-Q plot from model 1 to model 2. Even though the scale-location plots for all 3 models look fairly homoskedastic, they are probably not convincing enough for us to use non-robust standard errors. 
+
+We see that row 49 has a fairly high leverage for model 2, but its Cook's distance is not high enough for us to warrant investigating it further.
+
+## Normality of Errors
+Here we see an advantage of taking the logarithm in our second model.  Our residuals seem much closer to normality in the second model, as shown in the Q-Q plots.  This advantage is not huge, as we could have relied on asymptotics for model 1 as well.
+
+```{r residual_hists}
+ggarrange(
+    qplot(m1$residuals, bins = 30) + ggtitle('Model 1 Residuals'),
+    qplot(m2$residuals, bins = 30) + ggtitle('Model 2 Residuals'),
+    qplot(m3$residuals, bins = 30) + ggtitle('Model 3 Residuals'),
+    nrow = 2)
+```
+
+Model 1 does not show normal distribution of residuals. However, with model transformation, model 2 shows pretty decent normal distribution of residuals. Model 3 shows fairly normal distribution as well.
+
+
+# Omitted Variables
+
+We identified seven omitted variables that may introduce bias to the crime rate outcome. The seven variables are a person's morals (Morals), a healthy diet (Diet), a person's mental health (MH), a person's happiness (Happiness), a person's family stability (FS), the amount of drugs in the area (Drugs), and the probability a person will report a crime (prbrc). 
+
+The table below shows omitted variables' effect on both the measure variables and the outcome (crime rate). A value or (1) represents that the omitted variable has a positive correlation with the measured or outcome variable, a (-1) represents that the omitted variable has a negative correlation with the measured or outcome variable, and a (0) represents the omitted variable has no impact on the measured or outcome variable. 
+
+Omitted Variable   Morals   Diet   MH   Happiness  FS   Drugs   prbrc
+-----------------  -------  -----  ---  ---------  ---  ------  ------
+crmrate (B1)       -1        0     -1     -1        -1     1       1  
+prbarr             -1        0     -1     -1        -1     1       1  
+prbconv            -1        0     -1     -1        -1     1       1    
+density             0       -1      0      0         0     1       0 
+taxpc               0        1      1      1         0     0       0 
+pctmin80            0        0      0      0         0     0       0 
+pctymle             0       -1      0      0         0     1       0
+
+The equation for model_2 is:
+$$ crmrate = \beta_0 + \beta_1\cdot prbarr + \beta_2\cdot prconv+ \beta_3\cdot density+ \beta_4\cdot taxpc+ \beta_5\cdot pctymle+ \beta_6\cdot pctymle + error$$
+$$ Omitted \ variables = Morals, Diet, MH, Happiness, FS, Drugs, and \ prbrc $$
+As shown in the table above, the first row displays the impact the omitted variables have on the outcome variable crmrate.
+
+###Morals omitted
+
+$$ B_1 = (-) $$
+$$ Morals= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 $$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Mental Health (MH) Omitted
+$$ B_1 = (-) $$
+$$ Mental \  Health= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot taxpc $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 \ and \  \alpha_3\cdot taxpc>0$$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Happiness Omitted
+
+$$ B_1 = (-) $$
+$$ Happiness= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot taxpc $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 \ and \  \alpha_3\cdot taxpc>0$$ 
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+###Family Stability (FS) Omitted
+
+$$ B_1 = (-) $$
+$$ Family \ Stability= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr>0  \ and \  \alpha_2\cdot prbcov>0 $$ 
+
+The OLS coeffecient will be less negative, therefore losing statistical significance.
+
+### Drugs in area (Drugs) Omitted
+
+$$ B_1 = (+) $$
+
+
+$$ Drugs= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov + \alpha_3\cdot density+ \alpha_4\cdot pctymle $$
+$$\alpha_1\cdot prbarr<0 \ and\  \alpha_2\cdot prbcov<0 \ and\ \alpha_3\cdot density>0 \ and\  \alpha_4\cdot pctymle>0$$
+The OLS coeffecient will be more positive, therefore gaining statistical significance. 
+
+### Probability of Reported Crimes (prbrc) Omitted
+
+$$ B_1 = (+) $$
+
+$$ prbrc= \alpha_0 + \alpha_1\cdot prbarr + \alpha_2\cdot prbcov $$
+$$ \alpha_1\cdot prbarr<0  \ and \  \alpha_2\cdot prbcov<0 $$ 
+The OLS coeffecient will be less positive, therefore losing statistical significance. 
+
+
+# Conclusion
+
+We found that the population density is the best predictor we have available for crime rate.  However, it is unlikely that any political platform could make a direct effect to the how closely people live together.  Still, it may behoove the political campaign to visit high density areas and address the crime problem to the citizens.  People living in high density areas seem to see the most crime, so it is more likely for it to be an important issue for them.
+
+The law enforcement variables are more tractable.  Of the three probabilities for punishment, we found conviction probability to have the highest impact on crime rate.  Simply increasing police per capita does not seem to do a good job of reducing crime rate in isolation.  This is perhaps why a high number of arrests does not reduce crime as much as a high number of convictions.  It may be more prudent to make existing ordinances more harsh towards petty crime.  Certainly intuitive, harsher punishments for lesser crimes should work well in reducing the number of offenses.
+
+For further research, it would be a great idea to investigate the counties with anomalous arrest and convicition probabilities.  Counties like Madison seem to have very low crime rate, but addtional investigation is required to figure out whether these counties are special in some way.  If nothing else, one must elucidate why probabilities greater than 1 were recorded.
