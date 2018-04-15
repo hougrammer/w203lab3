@@ -227,7 +227,7 @@ stargazer(m1_wage, m2_wage, m3_wage, type = 'latex',
                                'Local', 'Total Sum')
 )
 ```
-We see from the above regression table that including each individual wage variable in the regression only provides a small improvement in adjusted $R^2$ from including just the federal wages.  It also causes all the coefficients to lose signifance.  When we combine all the wages into a sum, we see that the adjusted $R^2$ improves more and we end up with a single highly-significant coefficient.  Thus, the total wage variable is a parsimonious way to model the wage effect.
+We see from the regression table that including each individual wage variable in the regression only provides a small improvement in adjusted $R^2$ from including just the federal wages.  It also causes all the coefficients to lose signifance.  When we combine all the wages into a sum, we see that the adjusted $R^2$ improves more and we end up with a single highly-significant coefficient.  Thus, the total wage variable is a parsimonious way to model the wage effect.
 
 With respect to practical significance, none of the wage models may be that influential.  The coefficient on total sum of wages is `r round(m3_wage$coefficients[[2]], 6)`. A rise of \$1,000 in weekly wages would only cause `r round(m3_wage$coefficients[[2]], 6) * 1000` extra crimes per person.
 
@@ -240,22 +240,16 @@ m1 = lm(t2$crmrte ~ t2$density + t2$prbarr)
 coeftest(m1, vcov. = vcovHC)
 ```
 
-We find high statistical significance for the arrest probability coefficient; very high significance for the population density coefficient.  Each unit increase in population density seems to bring 0.007 crimes with him or her.  Each percent increase in arrest probability takes away .0005 crimes.  We note that these numbers are a little difficult to comprehend practically.  At this point, let us examine the diagnostic plots for our model.
-
-```{r model1_plots, fig.height=9}
-autoplot(m1, which = 1:6)
-```
-
-We see from the residuals vs fitted values plot that there is some evidence of non-zero conditional error mean.  In addition the Q-Q plot shows some evidence of positive residual skew.  At this point, we consider transforming the output variable into $\log(crmrte)$.  The interpretation of the new output variable is the proportional change in crime rate with respect to differential changes in input variables.  This interpretation makes logical sense (e.g. a 10% increase in crime rate is easy to comprehend).
+We find high statistical significance for the arrest probability coefficient; very high significance for the population density coefficient.  Each unit increase in population density seems to bring 0.007 crimes with him or her.  Each percent increase in arrest probability takes away 0.0005 crimes.  We note that these numbers are a little difficult to comprehend practically.  It is nonintuitive how big an effect of 0.0005 crimes.  Thus, we propose a second model, where we instead regress the natural logarithm of crime rate ($\ln(crmrte)$).  The interpretation of the new output variable is the proportional change in crime rate with respect to differential changes in the input variables.  This interpretation makes more intuitive sense (e.g. a 10% increase in crime rate is easier to grasp than 5/1000th of a crime).
 
 ```{r model2}
 m2 = lm(log(t2$crmrte) ~ t2$density + t2$prbarr)
 coeftest(m2, vcov. = vcovHC)
 ```
 
-Now we have very high statistical significance in both of our coefficients.  It is also at this point that we notice a unit increase in density causes a 16.5% decrease in crime rate.  This alarmingly high percentage prompts us to check on the units of population density (something glossed over in our initial EDA).  In the dataset, county 119 (Mecklenburg County) has the maximum density at `r round(max(t2$density), 2)`.  In 2018, we see that Mecklenburg has population 944,373 in 546 square miles, or about 1730 people per square mile[^3].  Since the data is older, we will assume that density is measured in people X100.  Now we see that a single person causes a 0.165% increase in crime rate (more reasonable).
+In this new model, we now have very high statistical significance in all of our coefficients.  It is also at this point that we notice a unit increase in density causes a 16.5% decrease in crime rate.  This alarmingly high percentage prompts us to check on the units of population density (something glossed over in our initial EDA).  In the dataset, county 119 (Mecklenburg County) has the maximum density at `r round(max(t2$density), 2)`.  In 2018, we see that Mecklenburg has population 944,373 in 546 square miles, or about 1730 people per square mile[^3].  Since the data is older, we will assume that density is measured in people X100.  Now we see that a single person causes a 0.165% increase in crime rate (more reasonable).
 
-We also see that a percent increase in arrest probability generally causes a 1.52% decrease in crime.  Now, obviously arrest probability can't increase ad infinitum, so the effect cannot continue forever (yet another reason to eliminate the questionable probabilities from earlier).  We can consider applying a logit transformation to arrest probability to confine the variable within 0 to 1, but we lose a lot of the interprebality of the arrest probability variable--it is easier to talk about an arrest probability of 50% than to talk about a log-odds of 0.  Still, we will very briefly investigate to see if a logit transformation at least improves our fit.
+We also see that a percent increase in arrest probability generally causes a 1.52% decrease in crime.  Obviously arrest probability can't increase ad infinitum, so the effect cannot continue forever (yet another reason to eliminate the questionable probabilities from earlier).  We can consider applying a logit transformation to arrest probability to confine the variable within 0 to 1, but we lose a lot of the interprebality of the arrest probability variable--it is easier to talk about an arrest probability of 50% than to talk about a log-odds of 0.  Still, we will very briefly investigate to see if a logit transformation at least improves our fit.
 
 [^3]: Population data from https://en.wikipedia.org/wiki/List_of_counties_in_North_Carolina.
 
@@ -264,13 +258,7 @@ logit = function(x) log(x/(1-x))
 summary(m2)$r.square
 summary(lm(log(t2$crmrte) ~ t2$density + logit(t2$prbarr)))$r.square
 ```
-We find virtually no difference with the logit transformed probability.  We will forego it in favor of ease of interprebability.  Now we return to the diagnostic plots of model 2.
-
-```{r model2_plot, fig.height=9}
-autoplot(m2, which = 1:6)
-```
-
-We now see a much better residuals vs fitted values plot (much closer to zero conditional mean).  The skew in our Q-Q plot also seems to have improved.  The data actually looks fairly homoskedastic from the scale-location plot, albeit model 1 had decent homoskedasticity as well.  We see that row 49 has a fairly high leverage, but its Cook's distance is not high enough for us to warrant investigating it further.
+We find virtually no difference with the logit transformed probability and will forego it in favor of ease of interprebability.  Now we return to the diagnostic plots of model 2.
 
 Since $\log(crmrte)$ is a bit easier to interpret than straight number of crimes per person, we will continue building our models with it.
 
@@ -321,6 +309,51 @@ stargazer(m1, m2, m3, m4, type = 'latex',
 ```
 
 We see that the level-level model had a higher $R^2$ than the log-level model.  However, we maintain that the ease of interprebability makes model 2 superior.  In any case, adding in the non-correlated covariates allowed us to explain over 2/3 of the variation in crime rate.  Obviously, adding in all the additonal covariates will increase $R^2$ even further (though not by much), but we do not think model 4 is the best model due to the extra complexity.
+
+# Classical Linear Model Assumptions
+In this section we will investigate whether any of the 6 CLM assumptions were violated.  Mostly, we will be analyzing model 1 and model 2.
+
+\begin{align*}
+&\text{Model 1:}\ \ \ \  &crmrte &= \beta_0 + \beta_1\ density + \beta_2\ prbconv + u \\
+&\text{Model 2:}\ \ \ \  &\ln(crmrte) &= \beta_0 + \beta_1\ density + \beta_2\ prbconv + u
+\end{align*}
+
+## Linearity
+Both models are specified as an output variable in relation to a linear combination of input variables.
+
+## Random Sampling
+While the we've seen several problems with data integrity within this data set, we've no reason to believe that the counties were not sampled randomly from the same population (North Carolina).
+
+## Perfect Multicolinearity
+Density and and conviction probability are obviously not perfectly colinear.  In fact, none of the variables in the data set with the exception of the manufactured wage-sum variable has perfect colinearity with each other.
+
+## Zero Conditional Mean
+At this point, let us examine the diagnostic plots for our models.
+
+```{r model1_plots, fig.height=9}
+autoplot(m1, which = 1:6)
+```
+
+For model 1, we see from the residuals vs fitted values plot that there is some evidence of non-zero conditional error mean.
+
+```{r model2_plot, fig.height=9}
+autoplot(m2, which = 1:6)
+```
+
+We now see a better residuals vs fitted values plot (much closer to zero conditional mean).  The skew in our Q-Q plot also seems to have improved.  The data actually looks fairly homoskedastic from the scale-location plot, albeit model 1 had decent homoskedasticity as well.  We see that row 49 has a fairly high leverage, but its Cook's distance is not high enough for us to warrant investigating it further.
+
+## Homoskedasticity
+The scale-location plots of both models actually look fairly decent in terms residual spread.  However, they are probably not convincing enough for us to use non-robust standard errors.
+
+## Normality of Errors
+Here we see an advantage of taking the logarithm in our second model.  Our residuals seem much closer to normality in the second model, as shown in the Q-Q plots.  This advantage is not huge, as we could have relied on asymptotics for model 1 as well.
+
+```{r residual_hists}
+ggarrange(
+    qplot(m1$residuals, bins = 30) + ggtitle('Model 1 Residuals'),
+    qplot(m2$residuals, bins = 30) + ggtitle('Model 2 Residuals'),
+    nrow = 2)
+```
 
 # Omitted Variables
 
@@ -391,4 +424,8 @@ The OLS coeffecient will be less positive, therefore losing statistical signific
 
 # Conclusion
 
-We found that the population density is the best predictor we have available for crime rate.  However, it is unlikely that any political platform could make a direct effect to the how closely people live together.  The other variable more tractable.  Of the three probabilities of punishment, arrest has the highest impact on crime rate.  Simply increasing police per capita does not seem to be having an effect of decreasing crime rate significantly.  It may be more prudent to dedicate more resources for the existing police force so that more arrests can be made without necessarily increasing police presence.
+We found that the population density is the best predictor we have available for crime rate.  However, it is unlikely that any political platform could make a direct effect to the how closely people live together.  Still, it may behoove the political campaign to visit high density areas and address the crime problem to the citizens.  People living in high density areas seem to see the most crime, so it is more likely for it to be an important issue for them.
+
+The law enforcement variables are more tractable.  Of the three probabilities for punishment, we found conviction probability to have the highest impact on crime rate.  Simply increasing police per capita does not seem to do a good job of reducing crime rate in isolation.  This is perhaps why a high number of arrests does not reduce crime as much as a high number of convictions.  It may be more prudent to make existing ordinances more harsh towards petty crime.  Certainly intuitive, harsher punishments for lesser crimes should work well in reducing the number of offenses.
+
+For further research, it would be a great idea to investigate the counties with anomalous arrest and convicition probabilities.  Counties like Madison seem to have very low crime rate, but addtional investigation is required to figure out whether these counties are special in some way.  If nothing else, one must elucidate why probabilities greater than 1 were recorded.
